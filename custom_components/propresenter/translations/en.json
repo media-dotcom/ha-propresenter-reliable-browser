@@ -1,0 +1,124 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to ProPresenter",
+        "description": "Enter the connection details for your ProPresenter instance.",
+        "data": {
+          "host": "IP Address or Hostname",
+          "port": "Port"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure ProPresenter",
+        "description": "Update the connection details for your ProPresenter instance.",
+        "data": {
+          "host": "IP Address or Hostname",
+          "port": "Port"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered ProPresenter",
+        "description": "Do you want to add {name} to Home Assistant?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to ProPresenter. Please check the IP address and port.",
+      "unknown": "An unexpected error occurred. Please try again."
+    },
+    "abort": {
+      "already_configured": "This ProPresenter instance is already configured.",
+      "reconfigure_successful": "ProPresenter reconfigured successfully",
+      "no_host": "No host information in discovery data.",
+      "cannot_connect": "Cannot connect to the discovered ProPresenter instance.",
+      "unknown": "An unexpected error occurred during discovery."
+    }
+  },
+  "entity": {
+    "button": {
+      "next_slide": {
+        "name": "Next slide"
+      },
+      "previous_slide": {
+        "name": "Previous slide"
+      },
+      "show_message": {
+        "name": "Show message"
+      },
+      "hide_message": {
+        "name": "Hide message"
+      }
+    },
+    "select": {
+      "stage_layout": {
+        "name": "Stage layout"
+      }
+    },
+    "switch": {
+      "clear_audio": {
+        "name": "Clear audio"
+      },
+      "clear_messages": {
+        "name": "Clear messages"
+      },
+      "clear_props": {
+        "name": "Clear props"
+      },
+      "clear_announcements": {
+        "name": "Clear announcements"
+      },
+      "clear_slide": {
+        "name": "Clear slide"
+      },
+      "clear_media": {
+        "name": "Clear media"
+      },
+      "clear_video_input": {
+        "name": "Clear video input"
+      }
+    },
+    "sensor": {
+      "active_presentation": {
+        "name": "Active presentation"
+      }
+    }
+  },
+  "services": {
+    "show_message": {
+      "name": "Show message",
+      "description": "Show a ProPresenter message with optional dynamic token values. Use the message UUID or name to identify the message.",
+      "fields": {
+        "message": {
+          "name": "Message UUID or Name",
+          "description": "UUID or name of the message to show (e.g., \"4e677061-f132-4f21-8ddf-84df5cf8a58a\" or \"Child message\")"
+        },
+        "tokens": {
+          "name": "Token values",
+          "description": "Token values as key-value pairs. Example: Name and Room tokens with their values"
+        }
+      }
+    },
+    "refresh_presentation_cache": {
+      "name": "Refresh presentation cache",
+      "description": "Force refresh the cached presentation details. Call this after editing slide notes in ProPresenter to immediately update the sensor values."
+    },
+    "trigger_slide": {
+      "name": "Trigger slide",
+      "description": "Trigger one slide in the active ProPresenter presentation without changing the ProPresenter view context.",
+      "fields": {
+        "slide_index": {
+          "name": "Slide index",
+          "description": "The original 0-based ProPresenter slide index."
+        },
+        "expected_presentation_uuid": {
+          "name": "Expected presentation UUID",
+          "description": "Snapshot UUID used to reject a stale dashboard click."
+        },
+        "expected_metadata_revision": {
+          "name": "Expected metadata revision",
+          "description": "Opaque metadata revision paired with the expected UUID."
+        }
+      }
+    }
+  }
+}
