@@ -275,3 +275,18 @@ def find_playlist_presentation(
             if item.get("presentation_uuid") == presentation_uuid:
                 return item
     return None
+
+
+def find_playlist_item(
+    catalog: dict[str, Any] | None, playlist_uuid: str, item_key: str
+) -> dict[str, Any] | None:
+    """Find one exact playlist occurrence by playlist UUID and stable key."""
+    if not catalog:
+        return None
+    for playlist in catalog.get("playlists", []):
+        if playlist.get("uuid") != playlist_uuid:
+            continue
+        for item in playlist.get("items", []):
+            if item.get("key") == item_key:
+                return item
+    return None

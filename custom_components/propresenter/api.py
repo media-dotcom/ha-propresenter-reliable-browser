@@ -832,7 +832,10 @@ class ProPresenterAPI:
         """
         endpoint = f"/v1/playlist/{playlist_id}/{item_index}/trigger"
         _LOGGER.info("Triggering playlist item via endpoint: %s", endpoint)
-        result = await self._request("GET", endpoint)
+        # A trigger endpoint must distinguish a successful empty response from
+        # a missing playlist/item. The ordinary request helper intentionally
+        # maps 404 to None for older optional API calls.
+        result = await self._request_strict("GET", endpoint)
         return result
 
     async def focus_playlist(self, playlist_id: str) -> None:

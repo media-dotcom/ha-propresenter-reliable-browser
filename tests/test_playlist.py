@@ -19,6 +19,7 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 from propresenter_playlist_test.playlist import (  # noqa: E402
+    find_playlist_item,
     find_playlist_presentation,
     normalize_playlist_catalog,
 )
@@ -107,6 +108,32 @@ class PlaylistNormalizationTest(unittest.TestCase):
         self.assertEqual(find_playlist_presentation(catalog, "pres")["name"], "Song")
         self.assertIsNone(find_playlist_presentation(catalog, "missing"))
 
+    def test_finds_one_repeated_playlist_occurrence_by_stable_key(self) -> None:
+        catalog = {
+            "playlists": [
+                {
+                    "uuid": "playlist",
+                    "items": [
+                        {
+                            "key": "playlist:0:pres",
+                            "presentation_uuid": "pres",
+                            "index": 0,
+                        },
+                        {
+                            "key": "playlist:2:pres",
+                            "presentation_uuid": "pres",
+                            "index": 2,
+                        },
+                    ],
+                }
+            ]
+        }
+        self.assertEqual(
+            find_playlist_item(catalog, "playlist", "playlist:2:pres")["index"],
+            2,
+        )
+        self.assertIsNone(find_playlist_item(catalog, "playlist", "missing"))
+
     def test_accepts_inline_playlist_details_without_a_type_field(self) -> None:
         catalog = normalize_playlist_catalog(
             [
@@ -161,6 +188,7 @@ class PlaylistNormalizationTest(unittest.TestCase):
             [item["presentation_uuid"] for item in catalog["playlists"][0]["items"]],
             ["song"],
         )
+        self.assertEqual(catalog["playlists"][0]["items"][0]["index"], 1)
         self.assertEqual(catalog["presentation_uuids"], ["song"])
 
 

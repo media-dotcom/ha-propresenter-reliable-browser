@@ -88,6 +88,15 @@ class StrictRequestTest(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_playlist_item_trigger_uses_strict_errors(self) -> None:
+        async def run() -> None:
+            api = ProPresenterAPI("127.0.0.1")
+            api._session = _Session(_Response(404))
+            with self.assertRaises(ProPresenterNotFoundError):
+                await api.trigger_playlist_item("playlist", 3)
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

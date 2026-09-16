@@ -52,3 +52,45 @@ trigger_slide:
       required: false
       selector:
         text:
+
+trigger_playlist_item:
+  name: Trigger playlist item
+  description: Make one selected ProPresenter presentation playlist item live without first focusing a library presentation.
+  target:
+    entity:
+      integration: propresenter
+      domain: sensor
+  fields:
+    playlist_uuid:
+      name: Playlist UUID
+      description: The UUID of the ProPresenter playlist containing the selected item.
+      required: true
+      selector:
+        text:
+    item_key:
+      name: Playlist item key
+      description: The stable occurrence key returned by the presentation browser.
+      required: true
+      selector:
+        text:
+    item_index:
+      name: Playlist item index
+      description: The original 0-based item index in the ProPresenter playlist.
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+    presentation_uuid:
+      name: Presentation UUID
+      description: The UUID of the presentation represented by the selected item.
+      required: true
+      selector:
+        text:
+    expected_playlist_revision:
+      name: Expected playlist revision
+      description: The opaque playlist revision captured when the item was selected.
+      required: true
+      selector:
+        text:

@@ -21,4 +21,5 @@ ENDPOINT_MESSAGES = "/v1/messages"
 # Service names
 SERVICE_SHOW_MESSAGE = "show_message"
 SERVICE_TRIGGER_SLIDE = "trigger_slide"
+SERVICE_TRIGGER_PLAYLIST_ITEM = "trigger_playlist_item"
 SERVICE_REFRESH_CACHE = "refresh_presentation_cache"
