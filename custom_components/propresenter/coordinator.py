@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import ProPresenterAPI, ProPresenterConnectionError
 from .const import CONF_PORT, DEFAULT_PORT, DOMAIN
-from .playlist import normalize_playlist_catalog
+from .playlist import coerce_playlist_objects, normalize_playlist_catalog
 from .presentation import (
     find_slide,
     find_slide_group,
@@ -80,11 +80,9 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
             # Presentation playlist structure - cache on first fetch
             # Only re-fetch if not in cache (user can call refresh service)
             if not hasattr(self, "_cached_presentation_playlists"):
-                presentation_playlists = (
-                    await self.api.get_presentation_playlists() or []
+                presentation_playlists = coerce_playlist_objects(
+                    await self.api.get_presentation_playlists()
                 )
-                if not isinstance(presentation_playlists, list):
-                    presentation_playlists = []
                 # Collect all playlist UUIDs (including nested ones)
                 playlist_uuids = []
                 collect_playlist_uuids(presentation_playlists, playlist_uuids)
@@ -96,7 +94,9 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
                         playlist_uuid
                     )
                     if details:
-                        presentation_playlist_details_list.append(details)
+                        presentation_playlist_details_list.extend(
+                            coerce_playlist_objects(details, details=True)
+                        )
 
                 self._cached_presentation_playlists = presentation_playlists
                 self._cached_presentation_playlist_details = (

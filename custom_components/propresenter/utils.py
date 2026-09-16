@@ -83,8 +83,12 @@ def collect_playlist_uuids(items: list[dict[str, Any]], uuids_list: list[str]) -
         uuids_list: List to append UUIDs to (modified in place)
     """
     for item in items:
-        field_type = item.get("field_type") or item.get("type", "")
-        playlist_uuid = get_nested_value(item, "id", "uuid")
+        if not isinstance(item, dict):
+            continue
+        field_type = str(item.get("field_type") or item.get("type", "")).lower()
+        playlist_uuid = get_nested_value(item, "id", "uuid") or item.get("uuid")
+        if not isinstance(playlist_uuid, str):
+            playlist_uuid = None
 
         has_item_list = isinstance(item.get("items"), list)
         if playlist_uuid and (

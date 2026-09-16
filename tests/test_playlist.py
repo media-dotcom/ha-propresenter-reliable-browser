@@ -122,6 +122,47 @@ class PlaylistNormalizationTest(unittest.TestCase):
         self.assertEqual(catalog["playlists"][0]["name"], "Inline Service")
         self.assertEqual(catalog["playlists"][0]["items"][0]["uuid"], "pres")
 
+    def test_filters_non_presentation_items_and_unwraps_payloads(self) -> None:
+        catalog = normalize_playlist_catalog(
+            {
+                "playlists": [
+                    {
+                        "id": {"uuid": "playlist", "name": "Service"},
+                        "type": "playlist",
+                    }
+                ]
+            },
+            {
+                "data": {
+                    "id": {"uuid": "playlist", "name": "Service"},
+                    "items": [
+                        {
+                            "id": {"uuid": "header", "name": "Songs"},
+                            "type": "header",
+                        },
+                        {
+                            "id": {"uuid": "song", "name": "Song"},
+                            "type": "presentation",
+                        },
+                        {
+                            "id": {"uuid": "video", "name": "Video"},
+                            "type": "media",
+                        },
+                        {
+                            "id": {"uuid": "placeholder", "name": "Unlinked"},
+                            "type": "placeholder",
+                        },
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(
+            [item["presentation_uuid"] for item in catalog["playlists"][0]["items"]],
+            ["song"],
+        )
+        self.assertEqual(catalog["presentation_uuids"], ["song"])
+
 
 if __name__ == "__main__":
     unittest.main()

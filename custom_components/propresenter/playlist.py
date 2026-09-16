@@ -17,6 +17,8 @@ def _as_text(value: Any) -> str | None:
 
 def _identity(value: Any) -> dict[str, Any]:
     """Return an identity dictionary from one of ProPresenter's shapes."""
+    if isinstance(value, str):
+        return {"uuid": value}
     if not isinstance(value, dict):
         return {}
     nested = value.get("id")
@@ -27,7 +29,13 @@ def _identity(value: Any) -> dict[str, Any]:
 
 def _identity_for_item(item: dict[str, Any]) -> dict[str, Any]:
     """Find the most specific identity in a playlist item."""
-    for key in ("presentation", "presentation_id", "id"):
+    for key in (
+        "presentation",
+        "presentation_id",
+        "presentation_uuid",
+        "id",
+        "uuid",
+    ):
         value = item.get(key)
         identity = _identity(value)
         if identity.get("uuid") or identity.get("name"):
@@ -37,14 +45,46 @@ def _identity_for_item(item: dict[str, Any]) -> dict[str, Any]:
 
 def _uuid(value: Any) -> str | None:
     """Extract one UUID-like value from an API object."""
+    if isinstance(value, str):
+        return _as_text(value)
     identity = _identity(value)
     return _as_text(identity.get("uuid"))
 
 
 def _name(value: Any, fallback: str) -> str:
     """Extract a display name from an API object."""
+    if isinstance(value, str):
+        return _as_text(value) or fallback
     identity = _identity(value)
     return _as_text(identity.get("name")) or _as_text(identity.get("label")) or fallback
+
+
+def coerce_playlist_objects(
+    value: Any, *, details: bool = False
+) -> list[dict[str, Any]]:
+    """Accept list and wrapper forms returned by different ProPresenter builds."""
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not isinstance(value, dict):
+        return []
+
+    # A detail response is one object with an id and an items array.  Treat it
+    # as one object before looking for generic wrapper keys.
+    if _uuid(value) and (
+        details
+        or _as_text(value.get("type"))
+        or isinstance(value.get("items"), list)
+        or isinstance(value.get("children"), list)
+    ):
+        return [value]
+
+    for key in ("playlists", "playlist", "items", "children", "data"):
+        nested = value.get(key)
+        if isinstance(nested, (list, dict)):
+            objects = coerce_playlist_objects(nested, details=details)
+            if objects:
+                return objects
+    return []
 
 
 def _kind(item: dict[str, Any]) -> str:
@@ -120,7 +160,10 @@ def _playlist_items(
                 continue
 
             item_kind = _kind(item)
-            if item_kind in {"playlist", "folder", "collection", "group"}:
+            # A presentation browser cannot fetch slide metadata for headers,
+            # placeholders, audio, media, or live-video playlist entries.
+            # Keep only actual presentation items in the browse catalog.
+            if item_kind != "presentation":
                 continue
 
             item_name = _name(item, f"Presentation {len(result) + 1}")
@@ -144,8 +187,8 @@ def _playlist_items(
 
 
 def normalize_playlist_catalog(
-    playlists: list[dict[str, Any]] | None,
-    playlist_details: list[dict[str, Any]] | None,
+    playlists: Any,
+    playlist_details: Any,
 ) -> dict[str, Any]:
     """Build a compact, stable playlist catalog for a dashboard selector.
 
@@ -154,8 +197,8 @@ def normalize_playlist_catalog(
     keeps repeated occurrences distinct by giving every item an occurrence
     key.  Only presentation-bearing items are returned to the card.
     """
-    root_items = [item for item in playlists or [] if isinstance(item, dict)]
-    details_items = [item for item in playlist_details or [] if isinstance(item, dict)]
+    root_items = coerce_playlist_objects(playlists)
+    details_items = coerce_playlist_objects(playlist_details, details=True)
 
     details_by_uuid = {
         playlist_uuid: details
