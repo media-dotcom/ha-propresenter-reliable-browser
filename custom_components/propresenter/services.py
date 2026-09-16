@@ -296,9 +296,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError("ProPresenter playlist data is unavailable")
 
         expected_revision = call.data["expected_playlist_revision"]
-        current_revision = static_coordinator.data.get(
-            "presentation_playlist_revision"
-        )
+        current_revision = static_coordinator.data.get("presentation_playlist_revision")
         if current_revision != expected_revision:
             raise ServiceValidationError(
                 "The playlist changed while this item was being selected; refresh and try again"
