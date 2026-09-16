@@ -44,11 +44,7 @@ def _uuid(value: Any) -> str | None:
 def _name(value: Any, fallback: str) -> str:
     """Extract a display name from an API object."""
     identity = _identity(value)
-    return (
-        _as_text(identity.get("name"))
-        or _as_text(identity.get("label"))
-        or fallback
-    )
+    return _as_text(identity.get("name")) or _as_text(identity.get("label")) or fallback
 
 
 def _kind(item: dict[str, Any]) -> str:
@@ -83,12 +79,9 @@ def _playlist_refs(items: list[dict[str, Any]]) -> Iterator[dict[str, str]]:
         kind = _kind(item)
         playlist_uuid = _uuid(item)
         has_item_list = isinstance(item.get("items"), list)
-        if (
-            playlist_uuid
-            and (
-                kind in {"playlist", "folder", "collection"}
-                or (has_item_list and kind not in {"presentation", "slide", "group"})
-            )
+        if playlist_uuid and (
+            kind in {"playlist", "folder", "collection"}
+            or (has_item_list and kind not in {"presentation", "slide", "group"})
         ):
             yield {
                 "uuid": playlist_uuid,
@@ -158,9 +151,7 @@ def normalize_playlist_catalog(
     key.  Only presentation-bearing items are returned to the card.
     """
     root_items = [item for item in playlists or [] if isinstance(item, dict)]
-    details_items = [
-        item for item in playlist_details or [] if isinstance(item, dict)
-    ]
+    details_items = [item for item in playlist_details or [] if isinstance(item, dict)]
 
     details_by_uuid = {
         playlist_uuid: details

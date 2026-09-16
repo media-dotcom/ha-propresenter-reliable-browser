@@ -13,9 +13,7 @@ PURE_PACKAGE = "propresenter_playlist_test"
 package = types.ModuleType(PURE_PACKAGE)
 package.__path__ = [str(PACKAGE_ROOT)]
 sys.modules[PURE_PACKAGE] = package
-spec = spec_from_file_location(
-    f"{PURE_PACKAGE}.playlist", PACKAGE_ROOT / "playlist.py"
-)
+spec = spec_from_file_location(f"{PURE_PACKAGE}.playlist", PACKAGE_ROOT / "playlist.py")
 module = module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
@@ -106,9 +104,7 @@ class PlaylistNormalizationTest(unittest.TestCase):
                 }
             ]
         }
-        self.assertEqual(
-            find_playlist_presentation(catalog, "pres")["name"], "Song"
-        )
+        self.assertEqual(find_playlist_presentation(catalog, "pres")["name"], "Song")
         self.assertIsNone(find_playlist_presentation(catalog, "missing"))
 
 

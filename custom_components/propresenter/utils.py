@@ -87,15 +87,9 @@ def collect_playlist_uuids(items: list[dict[str, Any]], uuids_list: list[str]) -
         playlist_uuid = get_nested_value(item, "id", "uuid")
 
         has_item_list = isinstance(item.get("items"), list)
-        if (
-            playlist_uuid
-            and (
-                field_type in {"playlist", "folder", "collection"}
-                or (
-                    has_item_list
-                    and field_type not in {"presentation", "slide", "group"}
-                )
-            )
+        if playlist_uuid and (
+            field_type in {"playlist", "folder", "collection"}
+            or (has_item_list and field_type not in {"presentation", "slide", "group"})
         ):
             uuids_list.append(playlist_uuid)
         if field_type in {"playlist", "group", "folder", "collection"}:

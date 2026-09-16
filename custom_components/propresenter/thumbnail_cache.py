@@ -68,9 +68,7 @@ class ThumbnailCache:
         """
         self.set_allowed_identities({(presentation_uuid, revision)})
 
-    def set_allowed_identities(
-        self, identities: set[tuple[str, str]]
-    ) -> None:
+    def set_allowed_identities(self, identities: set[tuple[str, str]]) -> None:
         """Set the UUID/revision pairs that may be retained or populated."""
         self._allowed_identities = set(identities)
         for key in list(self._entries):

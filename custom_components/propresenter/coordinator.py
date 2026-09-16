@@ -640,9 +640,7 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
     ) -> dict[str, Any] | None:
         """Fetch metadata for the active or an allowed playlist presentation."""
         if presentation_uuid == self.active_presentation_uuid:
-            return await self.async_ensure_active_presentation_details(
-                refresh=refresh
-            )
+            return await self.async_ensure_active_presentation_details(refresh=refresh)
         if not self.is_known_presentation_uuid(presentation_uuid):
             raise LookupError("Presentation is not present in the configured playlists")
 
