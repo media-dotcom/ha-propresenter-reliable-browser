@@ -107,6 +107,21 @@ class PlaylistNormalizationTest(unittest.TestCase):
         self.assertEqual(find_playlist_presentation(catalog, "pres")["name"], "Song")
         self.assertIsNone(find_playlist_presentation(catalog, "missing"))
 
+    def test_accepts_inline_playlist_details_without_a_type_field(self) -> None:
+        catalog = normalize_playlist_catalog(
+            [
+                {
+                    "id": {"uuid": "playlist", "name": "Inline Service"},
+                    "items": [
+                        {"id": {"uuid": "pres", "name": "Song"}},
+                    ],
+                }
+            ],
+            [],
+        )
+        self.assertEqual(catalog["playlists"][0]["name"], "Inline Service")
+        self.assertEqual(catalog["playlists"][0]["items"][0]["uuid"], "pres")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -79,8 +79,12 @@ def _playlist_refs(items: list[dict[str, Any]]) -> Iterator[dict[str, str]]:
         kind = _kind(item)
         playlist_uuid = _uuid(item)
         has_item_list = isinstance(item.get("items"), list)
+        has_explicit_kind = any(
+            _as_text(item.get(key)) for key in ("field_type", "type", "item_type")
+        )
         if playlist_uuid and (
             kind in {"playlist", "folder", "collection"}
+            or (has_item_list and not has_explicit_kind)
             or (has_item_list and kind not in {"presentation", "slide", "group"})
         ):
             yield {
