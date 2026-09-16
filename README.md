@@ -39,7 +39,10 @@ The companion dashboard card is maintained separately at
 `dist/propresenter-presentation.js` resource through HACS, then add
 `custom:propresenter-presentation` and select the Active presentation sensor in
 the visual editor. The card supports read-only monitoring, guarded triggering,
-explicit refresh, disabled-slide preservation, and a follow-live toggle.
+explicit refresh, disabled-slide preservation, and a follow-live toggle. It
+also exposes the configured ProPresenter presentation playlists in two
+selectors. Choosing an item browses its slides without changing live output;
+the Live button returns to the currently active presentation.
 
 The trigger service is `propresenter.trigger_slide`. It accepts the original
 0-based `slide_index` and optional `expected_presentation_uuid` plus

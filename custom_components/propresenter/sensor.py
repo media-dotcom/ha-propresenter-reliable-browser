@@ -69,4 +69,7 @@ class ProPresenterActivePresentationSensor(ProPresenterBaseEntity, SensorEntity)
             "metadata_revision": snapshot["metadata_revision"],
             "slide_layer_active": snapshot["slide_layer_active"],
             "metadata_available": snapshot["metadata_available"],
+            "playlist_revision": self.static_coordinator.data.get(
+                "presentation_playlist_revision"
+            ),
         }

@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import ProPresenterAPI, ProPresenterConnectionError
 from .const import CONF_PORT, DEFAULT_PORT, DOMAIN
+from .playlist import normalize_playlist_catalog
 from .presentation import (
     find_slide,
     find_slide_group,
@@ -38,6 +39,7 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
         self._last_known_version = (
             None  # Track version to only update device info when it changes
         )
+        self._presentation_playlist_revision: str | None = None
 
         # Get configuration values
         host = config_entry.data[CONF_HOST]
@@ -78,14 +80,18 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
             # Presentation playlist structure - cache on first fetch
             # Only re-fetch if not in cache (user can call refresh service)
             if not hasattr(self, "_cached_presentation_playlists"):
-                presentation_playlists = await self.api.get_presentation_playlists()
+                presentation_playlists = (
+                    await self.api.get_presentation_playlists() or []
+                )
+                if not isinstance(presentation_playlists, list):
+                    presentation_playlists = []
                 # Collect all playlist UUIDs (including nested ones)
                 playlist_uuids = []
                 collect_playlist_uuids(presentation_playlists, playlist_uuids)
 
                 # Fetch details for all playlists ONCE
                 presentation_playlist_details_list = []
-                for playlist_uuid in playlist_uuids:
+                for playlist_uuid in dict.fromkeys(playlist_uuids):
                     details = await self.api.get_presentation_playlist_details(
                         playlist_uuid
                     )
@@ -96,6 +102,7 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
                 self._cached_presentation_playlist_details = (
                     presentation_playlist_details_list
                 )
+                self._presentation_playlist_revision = secrets.token_urlsafe(24)
 
             # Audio playlist structure - cache on first fetch
             if not hasattr(self, "_cached_audio_playlists"):
@@ -155,6 +162,7 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
                 # Return cached playlist data
                 "presentation_playlists": self._cached_presentation_playlists,
                 "presentation_playlist_details_list": self._cached_presentation_playlist_details,
+                "presentation_playlist_revision": self._presentation_playlist_revision,
                 "audio_playlists": self._cached_audio_playlists,
                 "audio_playlist_details_list": self._cached_audio_playlist_details,
                 "media_playlists": self._cached_media_playlists,
@@ -214,6 +222,7 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
             delattr(self, "_cached_presentation_playlists")
         if hasattr(self, "_cached_presentation_playlist_details"):
             delattr(self, "_cached_presentation_playlist_details")
+        self._presentation_playlist_revision = None
         if hasattr(self, "_cached_audio_playlists"):
             delattr(self, "_cached_audio_playlists")
         if hasattr(self, "_cached_audio_playlist_details"):
@@ -222,6 +231,15 @@ class ProPresenterCoordinator(DataUpdateCoordinator):
             delattr(self, "_cached_media_playlists")
         if hasattr(self, "_cached_media_playlist_details"):
             delattr(self, "_cached_media_playlist_details")
+        if self.streaming_coordinator:
+            self.streaming_coordinator.invalidate_browsed_metadata()
+
+    def get_presentation_playlist_catalog(self) -> dict[str, Any]:
+        """Return normalized presentation playlists for an authenticated card."""
+        return normalize_playlist_catalog(
+            self.data.get("presentation_playlists", []),
+            self.data.get("presentation_playlist_details_list", []),
+        )
 
 
 class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
@@ -247,6 +265,12 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
         self._metadata_revision: str | None = None
         self._metadata_task: asyncio.Task[dict[str, Any] | None] | None = None
         self._metadata_lock = asyncio.Lock()
+        self._browsed_metadata: dict[str, dict[str, Any]] = {}
+        self._browsed_metadata_revisions: dict[str, str] = {}
+        self._browsed_metadata_tasks: dict[
+            str, asyncio.Task[dict[str, Any] | None]
+        ] = {}
+        self._browsed_metadata_lock = asyncio.Lock()
         self.thumbnail_cache = ThumbnailCache()
 
         # Set reference back to static coordinator
@@ -443,6 +467,9 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
             "presentation/slide_index",
         }:
             if new_uuid != old_uuid:
+                if new_uuid:
+                    self._browsed_metadata.pop(new_uuid, None)
+                    self._browsed_metadata_revisions.pop(new_uuid, None)
                 self._invalidate_metadata()
                 self._schedule_metadata_refresh()
 
@@ -514,25 +541,152 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
             "name": name,
         }
 
-    def build_metadata_response(self, entity_id: str) -> dict[str, Any]:
-        """Build the stable wire response consumed by the companion card."""
-        snapshot = self.get_active_snapshot()
+    def get_presentation_metadata(
+        self, presentation_uuid: str | None
+    ) -> dict[str, Any] | None:
+        """Return normalized metadata for the active or selected presentation."""
+        if not presentation_uuid:
+            return None
+        if presentation_uuid == self.active_presentation_uuid:
+            return self._metadata if self.metadata_available else None
+        if not self.is_known_presentation_uuid(presentation_uuid):
+            return None
+        return self._browsed_metadata.get(presentation_uuid)
+
+    def get_presentation_revision(self, presentation_uuid: str | None) -> str | None:
+        """Return the opaque revision for one active or browsed presentation."""
+        if not presentation_uuid:
+            return None
+        if presentation_uuid == self.active_presentation_uuid:
+            return self._metadata_revision if self.metadata_available else None
+        if not self.is_known_presentation_uuid(presentation_uuid):
+            return None
+        return self._browsed_metadata_revisions.get(presentation_uuid)
+
+    def is_known_presentation_uuid(self, presentation_uuid: str | None) -> bool:
+        """Whether a UUID is active or appears in this entry's playlist catalog."""
+        if not presentation_uuid:
+            return False
+        if presentation_uuid == self.active_presentation_uuid:
+            return True
+        if not self.static_coordinator:
+            return False
+        if not self.static_coordinator.data.get("presentation_playlist_revision"):
+            return False
+        catalog = self.static_coordinator.get_presentation_playlist_catalog()
+        known_uuids = set(catalog.get("presentation_uuids", []))
+        stale_uuids = set(self._browsed_metadata) - known_uuids
+        if stale_uuids:
+            for stale_uuid in stale_uuids:
+                self._browsed_metadata.pop(stale_uuid, None)
+                self._browsed_metadata_revisions.pop(stale_uuid, None)
+            self._sync_thumbnail_identities()
+        return presentation_uuid in known_uuids
+
+    def _sync_thumbnail_identities(self) -> None:
+        """Retain only current revisions for active and browsed presentations."""
+        identities: set[tuple[str, str]] = set()
+        if self._metadata and self._metadata_revision:
+            identities.add((self._metadata["uuid"], self._metadata_revision))
+        identities.update(self._browsed_metadata_revisions.items())
+        self.thumbnail_cache.set_allowed_identities(identities)
+
+    def invalidate_browsed_metadata(self) -> None:
+        """Drop playlist presentation metadata after the playlist catalog changes."""
+        for task in self._browsed_metadata_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._browsed_metadata.clear()
+        self._browsed_metadata_revisions.clear()
+        self._sync_thumbnail_identities()
+
+    def build_metadata_response(
+        self, entity_id: str, presentation_uuid: str | None = None
+    ) -> dict[str, Any]:
+        """Build the wire response consumed by the companion card."""
+        active_snapshot = self.get_active_snapshot()
+        selected_uuid = presentation_uuid or active_snapshot["presentation_uuid"]
+        metadata = self.get_presentation_metadata(selected_uuid)
+        revision = self.get_presentation_revision(selected_uuid)
+        is_active = selected_uuid == active_snapshot["presentation_uuid"]
+        selected_index = active_snapshot["current_index"] if is_active else None
+        selected_slide = find_slide(metadata, selected_index)
+        selected_group = find_slide_group(metadata, selected_index)
         return {
             "protocol_version": 1,
             "entity_id": entity_id,
-            "metadata_revision": snapshot["metadata_revision"],
-            "presentation_uuid": snapshot["presentation_uuid"],
-            "presentation_name": snapshot["name"],
-            "current_slide_index": snapshot["current_index"],
-            "current_slide_label": snapshot["current_label"],
-            "current_group": snapshot["current_group"],
-            "slide_count": snapshot["slide_count"],
-            "slide_layer_active": snapshot["slide_layer_active"],
-            "metadata_available": snapshot["metadata_available"],
-            "groups": self._metadata.get("groups", [])
-            if self.metadata_available
-            else [],
+            "metadata_revision": revision,
+            "presentation_uuid": selected_uuid,
+            "presentation_name": metadata.get("name") if metadata else None,
+            "current_slide_index": selected_index,
+            "current_slide_label": selected_slide.get("label")
+            if selected_slide
+            else None,
+            "current_group": selected_group.get("label") if selected_group else None,
+            "slide_count": metadata.get("slide_count", 0) if metadata else 0,
+            # This is always the actual output layer, even while the operator
+            # is browsing a non-live playlist item.
+            "slide_layer_active": active_snapshot["slide_layer_active"],
+            "metadata_available": bool(metadata and revision),
+            "is_active_presentation": is_active,
+            "active_presentation_uuid": active_snapshot["presentation_uuid"],
+            "active_slide_index": active_snapshot["current_index"],
+            "active_metadata_revision": active_snapshot["metadata_revision"],
+            "groups": metadata.get("groups", []) if metadata else [],
         }
+
+    async def async_ensure_presentation_details(
+        self, presentation_uuid: str, *, refresh: bool = False
+    ) -> dict[str, Any] | None:
+        """Fetch metadata for the active or an allowed playlist presentation."""
+        if presentation_uuid == self.active_presentation_uuid:
+            return await self.async_ensure_active_presentation_details(
+                refresh=refresh
+            )
+        if not self.is_known_presentation_uuid(presentation_uuid):
+            raise LookupError("Presentation is not present in the configured playlists")
+
+        if not refresh and presentation_uuid in self._browsed_metadata:
+            return self._browsed_metadata[presentation_uuid]
+
+        task = self._browsed_metadata_tasks.get(presentation_uuid)
+        if task and not task.done():
+            return await asyncio.shield(task)
+
+        task = self.hass.async_create_task(
+            self._async_fetch_browsed_presentation_details(presentation_uuid)
+        )
+        self._browsed_metadata_tasks[presentation_uuid] = task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if self._browsed_metadata_tasks.get(presentation_uuid) is task:
+                self._browsed_metadata_tasks.pop(presentation_uuid, None)
+
+    async def _async_fetch_browsed_presentation_details(
+        self, presentation_uuid: str
+    ) -> dict[str, Any] | None:
+        """Fetch a playlist presentation and commit only current identities."""
+        async with self._browsed_metadata_lock:
+            details = await self.api.get_presentation_details(presentation_uuid)
+            if not details:
+                raise ProPresenterConnectionError(
+                    f"No details returned for presentation {presentation_uuid}"
+                )
+            if not self.is_known_presentation_uuid(presentation_uuid):
+                _LOGGER.debug(
+                    "Discarding details for removed playlist presentation %s",
+                    presentation_uuid,
+                )
+                return None
+
+            normalized = normalize_presentation(details, presentation_uuid)
+            self._browsed_metadata[presentation_uuid] = normalized
+            self._browsed_metadata_revisions[presentation_uuid] = secrets.token_urlsafe(
+                24
+            )
+            self._sync_thumbnail_identities()
+            return normalized
 
     async def async_ensure_active_presentation_details(
         self, *, refresh: bool = False
@@ -588,19 +742,20 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
             self._metadata = normalized
             self._metadata_revision = secrets.token_urlsafe(24)
             self._data["active_presentation_details"] = normalized
-            self.thumbnail_cache.set_current_identity(
-                presentation_uuid, self._metadata_revision
-            )
+            self._sync_thumbnail_identities()
             self.async_set_updated_data(self._data)
             return normalized
 
     def _invalidate_metadata(self, *, clear_task: bool = True) -> None:
         """Drop old metadata and bytes before a new UUID/revision can be used."""
+        active_uuid = self.active_presentation_uuid
+        if active_uuid:
+            self._browsed_metadata.pop(active_uuid, None)
+            self._browsed_metadata_revisions.pop(active_uuid, None)
         self._metadata = None
         self._metadata_revision = None
         self._data["active_presentation_details"] = None
-        self.thumbnail_cache.clear()
-        self.thumbnail_cache.clear_current_identity()
+        self._sync_thumbnail_identities()
         if clear_task and self._metadata_task and not self._metadata_task.done():
             self._metadata_task.cancel()
             self._metadata_task = None
@@ -621,7 +776,7 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
         self.hass.async_create_task(refresh())
 
     async def async_refresh_active_presentation(self) -> dict[str, Any] | None:
-        """Explicitly refetch metadata and invalidate all old thumbnails."""
+        """Explicitly refetch active metadata and invalidate its thumbnails."""
         self._invalidate_metadata()
         self.async_set_updated_data(self._data)
         return await self.async_ensure_active_presentation_details(refresh=True)
@@ -654,17 +809,19 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
         quality: int,
     ) -> bytes | None:
         """Get one authenticated-view thumbnail through the shared cache."""
-        if not self.metadata_available:
+        metadata = self.get_presentation_metadata(presentation_uuid)
+        current_revision = self.get_presentation_revision(presentation_uuid)
+        if not metadata or not current_revision:
             return None
         if (
-            presentation_uuid != self.active_presentation_uuid
-            or revision != self._metadata_revision
+            revision != current_revision
             or slide_index < 0
-            or slide_index >= self._metadata.get("slide_count", 0)
+            or slide_index >= metadata.get("slide_count", 0)
+            or find_slide(metadata, slide_index) is None
         ):
             return None
         key: ThumbnailKey = (presentation_uuid, revision, slide_index, quality)
-        self.thumbnail_cache.set_current_identity(presentation_uuid, revision)
+        self._sync_thumbnail_identities()
         return await self.thumbnail_cache.get_or_fetch(
             key,
             lambda: self.api.get_presentation_thumbnail(
@@ -822,6 +979,15 @@ class ProPresenterStreamingCoordinator(DataUpdateCoordinator):
                 await self._metadata_task
             except asyncio.CancelledError:
                 pass
+
+        for task in self._browsed_metadata_tasks.values():
+            if not task.done():
+                task.cancel()
+        if self._browsed_metadata_tasks:
+            await asyncio.gather(
+                *self._browsed_metadata_tasks.values(), return_exceptions=True
+            )
+        self._browsed_metadata_tasks.clear()
 
         if self._stream_task and not self._stream_task.done():
             self._stream_task.cancel()

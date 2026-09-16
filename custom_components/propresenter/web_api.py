@@ -24,6 +24,8 @@ from .presentation import find_slide
 _LOGGER = logging.getLogger(__name__)
 
 WS_TYPE = "propresenter/get_active_presentation"
+WS_PLAYLISTS_TYPE = "propresenter/get_presentation_playlists"
+WS_PRESENTATION_TYPE = "propresenter/get_presentation"
 
 
 @dataclass
@@ -119,8 +121,141 @@ async def websocket_get_active_presentation(
     )
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_PLAYLISTS_TYPE,
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Optional("refresh", default=False): cv.boolean,
+    }
+)
+@websocket_api.async_response
+async def websocket_get_presentation_playlists(
+    hass: HomeAssistant, connection: Any, msg: dict[str, Any]
+) -> None:
+    """Return the current presentation playlist catalog for one entry."""
+    try:
+        target = _resolve_target(hass, msg["entity_id"])
+    except LookupError as err:
+        _send_ws_error(connection, msg["id"], "not_found", str(err))
+        return
+
+    if not _has_permission(connection.user, msg["entity_id"], POLICY_READ):
+        _send_ws_error(
+            connection,
+            msg["id"],
+            "unauthorized",
+            "Read permission is required for the ProPresenter presentation entity",
+        )
+        return
+
+    static_coordinator = target.coordinator.static_coordinator
+    if static_coordinator is None:
+        _send_ws_error(
+            connection,
+            msg["id"],
+            "unavailable",
+            "ProPresenter playlist data is unavailable",
+        )
+        return
+
+    try:
+        if msg["refresh"]:
+            static_coordinator.invalidate_playlist_cache()
+            await static_coordinator.async_request_refresh()
+        elif not static_coordinator.data.get("presentation_playlist_revision"):
+            await static_coordinator.async_refresh()
+        catalog = static_coordinator.get_presentation_playlist_catalog()
+    except ProPresenterConnectionError as err:
+        _send_ws_error(connection, msg["id"], "playlist_unavailable", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive HA boundary
+        _LOGGER.exception("Failed to build ProPresenter playlist response")
+        _send_ws_error(connection, msg["id"], "unknown_error", str(err))
+        return
+
+    connection.send_result(
+        msg["id"],
+        {
+            "protocol_version": 1,
+            "entity_id": msg["entity_id"],
+            "playlist_revision": static_coordinator.data.get(
+                "presentation_playlist_revision"
+            ),
+            "playlists": catalog["playlists"],
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_PRESENTATION_TYPE,
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("presentation_uuid"): cv.string,
+        vol.Optional("refresh", default=False): cv.boolean,
+    }
+)
+@websocket_api.async_response
+async def websocket_get_presentation(
+    hass: HomeAssistant, connection: Any, msg: dict[str, Any]
+) -> None:
+    """Return metadata for the active presentation or an allowed playlist item."""
+    try:
+        target = _resolve_target(hass, msg["entity_id"])
+    except LookupError as err:
+        _send_ws_error(connection, msg["id"], "not_found", str(err))
+        return
+
+    if not _has_permission(connection.user, msg["entity_id"], POLICY_READ):
+        _send_ws_error(
+            connection,
+            msg["id"],
+            "unauthorized",
+            "Read permission is required for the ProPresenter presentation entity",
+        )
+        return
+
+    presentation_uuid = msg["presentation_uuid"]
+    coordinator = target.coordinator
+    if not coordinator.is_known_presentation_uuid(presentation_uuid):
+        _send_ws_error(
+            connection,
+            msg["id"],
+            "not_found",
+            "That presentation is not present in the configured playlists",
+        )
+        return
+
+    try:
+        metadata = await coordinator.async_ensure_presentation_details(
+            presentation_uuid, refresh=msg["refresh"]
+        )
+    except LookupError as err:
+        _send_ws_error(connection, msg["id"], "not_found", str(err))
+        return
+    except ProPresenterConnectionError as err:
+        _send_ws_error(connection, msg["id"], "metadata_unavailable", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive HA boundary
+        _LOGGER.exception("Failed to build ProPresenter presentation response")
+        _send_ws_error(connection, msg["id"], "unknown_error", str(err))
+        return
+
+    if metadata is None:
+        _send_ws_error(
+            connection,
+            msg["id"],
+            "metadata_unavailable",
+            "Presentation metadata is unavailable",
+        )
+        return
+    connection.send_result(
+        msg["id"],
+        coordinator.build_metadata_response(msg["entity_id"], presentation_uuid),
+    )
+
+
 class ProPresenterThumbnailView(HomeAssistantView):
-    """Serve one active presentation thumbnail through HA authentication."""
+    """Serve one allowed presentation thumbnail through HA authentication."""
 
     url = "/api/propresenter/thumbnail/{entity_id}/{presentation_uuid}/{slide_index}"
     name = "api:propresenter:thumbnail"
@@ -162,17 +297,14 @@ class ProPresenterThumbnailView(HomeAssistantView):
             return web.Response(status=403, text="read permission is required")
 
         coordinator = target.coordinator
-        snapshot = coordinator.get_active_snapshot()
-        if (
-            snapshot["presentation_uuid"] != presentation_uuid
-            or snapshot["metadata_revision"] != revision
-        ):
+        metadata = coordinator.get_presentation_metadata(presentation_uuid)
+        current_revision = coordinator.get_presentation_revision(presentation_uuid)
+        if not metadata or current_revision != revision:
             return web.Response(status=409, text="presentation metadata is stale")
         if (
-            not coordinator.metadata_available
-            or slide_index < 0
-            or slide_index >= snapshot["slide_count"]
-            or find_slide(coordinator.metadata, slide_index) is None
+            slide_index < 0
+            or slide_index >= metadata.get("slide_count", 0)
+            or find_slide(metadata, slide_index) is None
         ):
             return web.Response(status=404, text="slide is not available")
 
@@ -187,11 +319,7 @@ class ProPresenterThumbnailView(HomeAssistantView):
             return web.Response(status=502, text=str(err))
 
         if thumbnail is None:
-            current = coordinator.get_active_snapshot()
-            if (
-                current["presentation_uuid"] != presentation_uuid
-                or current["metadata_revision"] != revision
-            ):
+            if coordinator.get_presentation_revision(presentation_uuid) != revision:
                 return web.Response(status=409, text="presentation metadata is stale")
             return web.Response(status=404, text="thumbnail was not returned")
 
@@ -208,4 +336,6 @@ class ProPresenterThumbnailView(HomeAssistantView):
 def async_setup_web_api(hass: HomeAssistant) -> None:
     """Register the browser's custom command and authenticated view once."""
     websocket_api.async_register_command(hass, websocket_get_active_presentation)
+    websocket_api.async_register_command(hass, websocket_get_presentation_playlists)
+    websocket_api.async_register_command(hass, websocket_get_presentation)
     hass.http.register_view(ProPresenterThumbnailView())

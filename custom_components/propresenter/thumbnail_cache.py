@@ -37,7 +37,7 @@ class ThumbnailCache:
         self._entries: OrderedDict[ThumbnailKey, _CacheEntry] = OrderedDict()
         self._inflight: dict[ThumbnailKey, asyncio.Task[bytes | None]] = {}
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._current_identity: tuple[str, str] | None = None
+        self._allowed_identities: set[tuple[str, str]] = set()
         self._total_bytes = 0
 
     @property
@@ -58,10 +58,23 @@ class ThumbnailCache:
         return len(self._inflight)
 
     def set_current_identity(self, presentation_uuid: str, revision: str) -> None:
-        """Select the only UUID/revision that may be retained or populated."""
-        self._current_identity = (presentation_uuid, revision)
+        """Select one UUID/revision that may be retained or populated.
+
+        This remains as a compatibility helper for callers that only work
+        with the active presentation.  The browser uses
+        :meth:`set_allowed_identities` so a live presentation and a selected
+        playlist item can be cached by the same entry without mixing old
+        revisions into either view.
+        """
+        self.set_allowed_identities({(presentation_uuid, revision)})
+
+    def set_allowed_identities(
+        self, identities: set[tuple[str, str]]
+    ) -> None:
+        """Set the UUID/revision pairs that may be retained or populated."""
+        self._allowed_identities = set(identities)
         for key in list(self._entries):
-            if key[:2] != self._current_identity:
+            if key[:2] not in self._allowed_identities:
                 self._remove(key)
 
     def clear(self) -> None:
@@ -70,8 +83,8 @@ class ThumbnailCache:
             self._remove(key)
 
     def clear_current_identity(self) -> None:
-        """Forget the UUID/revision allowed to populate late responses."""
-        self._current_identity = None
+        """Forget all UUID/revision pairs allowed to populate late responses."""
+        self._allowed_identities.clear()
 
     async def get_or_fetch(
         self,
@@ -109,7 +122,7 @@ class ThumbnailCache:
             self._inflight.pop(key, None)
 
     def _key_is_current(self, key: ThumbnailKey) -> bool:
-        return self._current_identity is not None and key[:2] == self._current_identity
+        return key[:2] in self._allowed_identities
 
     def _put(self, key: ThumbnailKey, data: bytes) -> None:
         if len(data) > self.max_bytes:

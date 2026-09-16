@@ -81,6 +81,22 @@ class ThumbnailCacheTest(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_live_and_browsed_revisions_can_share_one_entry(self) -> None:
+        async def run() -> None:
+            cache = ThumbnailCache(max_items=10, max_bytes=100)
+            cache.set_allowed_identities({("live", "r1"), ("browse", "r2")})
+
+            async def fetch() -> bytes:
+                return b"jpeg"
+
+            await cache.get_or_fetch(("live", "r1", 0, 400), fetch)
+            await cache.get_or_fetch(("browse", "r2", 0, 400), fetch)
+            self.assertEqual(cache.item_count, 2)
+            cache.set_allowed_identities({("live", "r3"), ("browse", "r2")})
+            self.assertEqual(cache.item_count, 1)
+
+        asyncio.run(run())
+
     def test_fetches_are_bounded_to_four_per_entry(self) -> None:
         async def run() -> None:
             cache = ThumbnailCache(max_items=20, max_bytes=1000, max_concurrent=4)
