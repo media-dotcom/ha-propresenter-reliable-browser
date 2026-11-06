@@ -1,112 +1,81 @@
-# ProPresenter Integration for Home Assistant
+# ProPresenter for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz/)
+This Home Assistant integration connects to ProPresenter over its local
+network API. It exposes controls and status as Home Assistant entities, and
+includes a presentation browser that can preview slides before you put one on
+screen.
 
-This custom integration allows you to control [ProPresenter](https://www.renewedvision.com/propresenter) presentation software from Home Assistant. Fully functional with ProPresenter v19 and up. Partial functionality with v7.9.1 and up.
+## What it provides
 
-## Some of the Features
+- Media playback controls, including play, pause, and seek.
+- Controls for messages, stage layouts, looks, macros, video inputs, timers,
+  and individual output layers.
+- Next and previous slide buttons, plus thumbnail images for current and
+  neighboring slides.
+- An `Active presentation` sensor with live presentation and slide details.
+- On demand presentation metadata and authenticated thumbnails for the
+  companion dashboard card. Slides are not added as separate Home Assistant
+  entities.
 
-- **Media & Audio Player Integration**: Full media player entity for controlling playback with seek and playlist support
-<img width="524" height="192" alt="image" src="https://github.com/user-attachments/assets/8913e5ed-6249-4fc9-a194-7012a9a8acab" />
+The integration is fully supported with ProPresenter 19 and later. Some
+features are available with ProPresenter 7.9.1 and later.
 
-- **Message Control**: Show and hide message buttons for each configured message
-- **Stage Screen Layouts**: Select dropdowns to switch between stage layouts
-- **Looks Management**: Select entity for switching between ProPresenter looks
-<img width="529" height="385" alt="image" src="https://github.com/user-attachments/assets/99c41ec8-ee86-4e77-80e2-c0e7e6a67883" />
+## Presentation browser
 
-- **Clear Layer Controls**: Switch entities to clear different ProPresenter layers (audio, messages, props, announcements, slide, media, video input)
-- **Macro Selection**: Select entity to trigger ProPresenter macros
-- **Video Input Selection**: Select entity for switching video inputs
-- **Timer Management**: Control and monitor ProPresenter timers with reset buttons
-<img width="514" height="450" alt="image" src="https://github.com/user-attachments/assets/67d08e63-11ed-4915-9163-e7d6282a7eed" />
+Install the companion [ProPresenter presentation card](https://github.com/media-dotcom/lovelace-propresenter-presentation)
+to browse presentations from Home Assistant. The card gets its presentation
+and slide data from this integration.
 
+Choosing a playlist item loads its slides for browsing while leaving live
+output alone. Clicking a slide sends that slide live. The **Enter** control
+can make the selected playlist item live without choosing a specific slide,
+and **Live** returns the browser to the current active presentation. Read-only
+mode disables controls that send commands. Trigger requests include
+presentation identity and revision checks to reject stale browser selections.
 
-- **Slide Control**: Button entities for Next Slide and Previous Slide actions
-- **Presentation Thumbnails**: Image entities displaying slide thumbnails for easy reference
-<img width="751" height="324" alt="image" src="https://github.com/user-attachments/assets/44f10684-43d3-45a9-a91a-550a7a76f9d6" />
+The browser uses authenticated Home Assistant WebSocket commands and
+short-lived signed thumbnail URLs. No ProPresenter credentials or Home
+Assistant tokens are stored in the card configuration.
 
-## Dynamic presentation browser
+## Set up ProPresenter
 
-The integration also exposes one stable `Active presentation` sensor per
-ProPresenter config entry. It keeps scalar live state in Home Assistant and
-serves the changing slide collection on demand over an authenticated WebSocket
-command. Slide thumbnails are authenticated, revision-aware, and bounded by a
-shared per-entry cache; individual slides are not created as Home Assistant
-entities.
+1. In ProPresenter, open **Settings → Network** and enable the network API.
+2. For automatic discovery, enable either **Stage App** or **ProPresenter
+   Remote**.
+3. Keep the ProPresenter machine and Home Assistant on a network where they
+   can reach each other.
 
-The companion dashboard card is maintained separately at
-`https://github.com/media-dotcom/lovelace-propresenter-presentation`. Install its
-`dist/propresenter-presentation.js` resource through HACS, then add
-`custom:propresenter-presentation` and select the Active presentation sensor in
-the visual editor. The card supports read-only monitoring, guarded triggering,
-explicit refresh, disabled-slide preservation, and a follow-live toggle. It
-also exposes the configured ProPresenter presentation playlists in two
-selectors. Choosing an item browses its slides without changing live output;
-the Live button returns to the currently active presentation.
+## Install
 
-The trigger service is `propresenter.trigger_slide`. It accepts the original
-0-based `slide_index` and optional `expected_presentation_uuid` plus
-`expected_metadata_revision` guards. The card supplies both guards and uses the
-active-presentation trigger endpoint, so it does not focus a different
-presentation in ProPresenter.
+### HACS
 
-## Video Guide
+1. Open HACS in Home Assistant and search for **ProPresenter**, or use the
+   [HACS repository link](https://my.home-assistant.io/redirect/hacs_repository/?owner=media-dotcom&repository=ha-propresenter-reliable-browser&category=integration).
+2. Download the integration and restart Home Assistant.
+3. If discovery does not start automatically, go to **Settings → Devices &
+   Services → Add Integration**, search for **ProPresenter**, and enter the
+   connection details.
 
-<a href="https://youtu.be/4U3ebJGnlks">
-    <img src="https://img.youtube.com/vi/4U3ebJGnlks/maxresdefault.jpg" alt="Watch the video" style="width: 50%; border-radius: 8px;">
-</a>
+### Manual install
 
-## Installation
+Copy `custom_components/propresenter` into the `custom_components` directory
+under your Home Assistant configuration, then restart Home Assistant and add
+the integration from **Settings → Devices & Services**.
 
-### ProPresenter Setup
+## Companion card
 
-Make sure the ProPresenter API is enabled:
+The Lovelace card is released separately. Install it through HACS as a
+Dashboard repository, or add its `dist/propresenter-presentation.js` file as a
+Dashboard resource. Add `custom:propresenter-presentation` to a dashboard and
+select the integration's **Active presentation** sensor.
 
-1. Open ProPresenter
-2. Go to **ProPresenter** → **Settings** → **Network** → **Enable Network**
-<img width="491" height="220" alt="image" src="https://github.com/user-attachments/assets/50f08cbf-0a53-4d06-91e8-d7a9b5557e75" />
+## Development
 
-3. Optionally enable either **Stage App** or **ProPresenter Remote** to enable auto-discovery in Home Assistant
+The pure backend tests can be run from this repository:
 
-### Home Assistant Setup - HACS (Recommended)
+```sh
+PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
-1. Make sure you have [HACS](https://hacs.xyz/) installed in your Home Assistant instance
-2. Search for  `ProPresenter` in HACS or click the button below:
-
-   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=media-dotcom&repository=ha-propresenter-reliable-browser&category=integration)
-
-3. Click **Download** on the ProPresenter integration
-4. Restart Home Assistant
-5. ProPresenter should be automatically discovered under **Settings** → **Devices & Services**
-<img width="325" height="253" alt="image" src="https://github.com/user-attachments/assets/2a07803f-d98d-43be-9b04-1736978db00f" />
-
-6. Otherwise go to **Settings** → **Devices & Services** → **Add Integration**
-7. Search for `ProPresenter` and follow the setup instructions
-
-### Manual Installation
-
-1. Copy the `propresenter` folder to your Home Assistant `custom_components` directory:
-   ```
-   <config_directory>/custom_components/propresenter/
-   ```
-
-2. Restart Home Assistant
-
-3. Refer to step 5 above
-
-
-## Other Noteworthy Projects
-Home Assistant ProWebRemote Add-on
-https://github.com/BenJamesAndo/ha-addons/tree/main/prowebremote
-
-<img width="1917" height="925" alt="image" src="https://github.com/user-attachments/assets/0018fa65-788c-4dc6-b94d-434e8cf163e5" />
-
-## API Reference
-
-This integration uses the ProPresenter REST API v1.
-Full API documentation: https://openapi.propresenter.com
-
-## Credits
-
-- greyshirtguy for his wonderful and tireless work on https://github.com/bitfocus/companion-module-renewedvision-propresenter-api
-- ProPresenter by Renewed Vision: https://renewedvision.com/propresenter
+The ProPresenter REST API documentation is available at
+[openapi.propresenter.com](https://openapi.propresenter.com).
