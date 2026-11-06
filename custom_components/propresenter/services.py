@@ -234,6 +234,29 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 "expected_presentation_uuid and expected_metadata_revision must be provided together"
             )
 
+        active_uuid = coordinator.active_presentation_uuid
+        if expected_uuid and expected_uuid != active_uuid:
+            if not coordinator.is_known_presentation_uuid(expected_uuid):
+                raise ServiceValidationError("The selected presentation is no longer in a configured playlist")
+            metadata = await coordinator.async_ensure_presentation_details(expected_uuid)
+            revision = coordinator.get_presentation_revision(expected_uuid)
+            if not metadata or not revision:
+                raise ServiceValidationError("Selected presentation metadata is unavailable")
+            if expected_revision != revision:
+                raise ServiceValidationError("The presentation changed while this slide was being selected; refresh and try again")
+            slide_index = call.data["slide_index"]
+            if find_slide(metadata, slide_index) is None:
+                raise ServiceValidationError(f"Slide index {slide_index} is outside the selected presentation")
+            try:
+                await coordinator.api.trigger_slide(expected_uuid, slide_index)
+            except ProPresenterNotFoundError as err:
+                raise HomeAssistantError(f"ProPresenter rejected the slide trigger: {err}") from err
+            except ProPresenterRequestError as err:
+                raise HomeAssistantError(f"ProPresenter trigger failed: {err}") from err
+            except ProPresenterConnectionError as err:
+                raise HomeAssistantError(f"ProPresenter connection failed: {err}") from err
+            return
+
         metadata = await coordinator.async_ensure_active_presentation_details()
         snapshot = coordinator.get_active_snapshot()
         if not metadata or not coordinator.metadata_available:
