@@ -1,12 +1,10 @@
 # ProPresenter Integration for Home Assistant
 
-> **Repository consolidation planned:** this integration's newer browser and
-> playlist features are being brought together with the Home Assistant
-> integration and dashboard card in
-> [`media-dotcom/ha-propresenter-suite`](https://github.com/media-dotcom/ha-propresenter-suite).
-> The current release remains available here until the consolidated release
-> and migration instructions are verified. This repository will then point
-> users to the new home.
+> **Consolidated:** The integration and dashboard card have been merged into
+> [media-dotcom/ha-propresenter](https://github.com/media-dotcom/ha-propresenter).
+> That repository is the single home for the combined solution. Follow its
+> installation and migration instructions; live validation and a consolidated
+> release are still pending.
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz/)
 
